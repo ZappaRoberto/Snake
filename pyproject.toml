@@ -1,0 +1,98 @@
+[project]
+name = "3d-snake-game"
+version = "0.1.0"
+description = "A 3D Snake game with React frontend and Python backend"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.0",
+    "fastapi[standard]>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "websockets>=12.0",
+]
+
+[project.scripts]
+snake-game = "src.main:app"
+
+[tool.uv]
+dev-dependencies = [
+    "ruff>=0.4.0",
+    "pytest>=8.0.0",
+    "pytest-testmon>=2.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=5.0.0",
+    "ty>=0.0.15",
+    "deptry>=0.16.0",       # Dependency hygiene
+    "vulture>=2.11.0",      # Dead code detection
+    "refurb>=0.4.0",        # Modern python patterns
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.24.0",
+    "semgrep>=1.70.0",      # Security scanner
+    "grep-ast>=0.9.0",      # AST search tool
+    "import-linter>=2.0",
+    "detect-secrets>=1.4.0",
+    "repomix>=0.2.15",
+    "polyfactory>=2.0.0",
+    "icecream>=2.0.0",  
+]
+
+# --- 1. LINTING & FORMATTING (RUFF) ---
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+# E=Error, F=Pyflakes, I=Isort, B=Bugbear, UP=Upgrade
+# C901=Complexity, PL=Pylint (Refactor), SIM=Simplify
+select = ["E", "F", "I", "B", "UP", "C901", "PL", "SIM", "TID"]
+ignore = []
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10  # Hard constraint: funzioni troppo complesse vengono rifiutate
+
+[tool.ruff.lint.pylint]
+max-args = 5         # Hard constraint: max 5 argomenti (usa Pydantic se servono di più)
+max-statements = 50
+max-branches = 12
+
+[tool.ruff.lint.flake8-tidy-imports]
+# Vieta l'uso di librerie non standard per lo stack
+banned-module-level-imports = ["argparse", "click", "json"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+# --- 2. TESTING (PYTEST) ---
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+# -v: Verbose, -ra: Report, --strict-markers: No marker inventati
+addopts = "-v -ra --strict-markers --cov=src --cov-report=term-missing"
+pythonpath = ["."]
+asyncio_mode = "auto"
+
+# --- 3. TYPE CHECKING (TY) ---
+[tool.ty]
+# Configurazione ipotetica per ty (simile a ruff/pyright)
+type-checking-mode = "strict"
+python-version = "3.12"
+include = ["src"]
+exclude = ["**/node_modules", "**/__pycache__", "tests"]
+
+# --- 4. DEPENDENCY HYGIENE (DEPTRY) ---
+[tool.deptry]
+ignore_notebooks = true
+extend_exclude = ["docs", "tests", "scripts"]
+# Ignora dev-dependencies che non importi nel codice di produzione
+ignore_dev_dependencies = ["pytest", "pytest-asyncio", "pytest-cov", "mkdocs-material", "mkdocstrings"]
+
+# --- 5. DEAD CODE DETECTION (VULTURE) ---
+[tool.vulture]
+exclude = ["tests/", "docs/", ".venv/", "scripts/"]
+ignore_names = ["args", "kwargs", "main"] 
+min_confidence = 100  # Segnala solo codice SICURAMENTE morto
+paths = ["src"]
+
+# --- 6. DOCUMENTATION (MKDOCS) ---
+# (MkDocs usa mkdocs.yml, ma a volte plugin leggono qui)

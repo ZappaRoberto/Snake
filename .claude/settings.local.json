@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv sync:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run python:*)",
+      "Bash(npm install)",
+      "Bash(npx tsc:*)",
+      "Bash(npm install:*)",
+      "Bash(uv run ruff check:*)",
+      "Bash(uv run vulture:*)",
+      "Bash(timeout:*)",
+      "Bash(curl:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(wget:*)",
+      "Bash(python3:*)",
+      "Bash(uv run:*)",
+      "Bash(uv add:*)",
+      "Bash(npm run dev:*)",
+      "Bash(agent-browser:*)",
+      "Bash(npm run build:*)",
+      "WebFetch(domain:localhost)",
+      "Bash(npm test)",
+      "Bash(npm test:*)",
+      "Bash(npm run test)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm run build:*)",
+      "Bash(pnpm biome check:*)",
+      "Bash(pnpm dev:*)",
+      "Bash(pnpm build:*)",
+      "Bash(true:*)",
+      "Bash(grep:*)",
+      "Bash(echo agent-browser not found:*)",
+      "Bash(taskkill:*)",
+      "Bash(head:*)"
+    ]
+  }
+}
