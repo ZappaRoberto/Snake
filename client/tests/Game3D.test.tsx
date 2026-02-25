@@ -16,14 +16,36 @@ let mockCallTracker = {
   geometries: [] as any[],
   materials: [] as any[],
   meshes: [] as any[],
+  groups: [] as any[],
 }
 
 // Helper to create a mock with set() method
 function createMockWithSet(): any {
-  return {
-    set: vi.fn(function(this: any) { return this }),
+  const mock: any = {
+    x: 0,
+    y: 0,
+    z: 0,
+    set: vi.fn(function(this: any, x: number, y?: number, z?: number) {
+      this.x = x
+      if (y !== undefined) this.y = y
+      if (z !== undefined) this.z = z
+      return this
+    }),
     clone: vi.fn(() => createMockWithSet()),
+    copy: vi.fn(function(this: any, v: any) {
+      this.x = v.x
+      this.y = v.y
+      this.z = v.z
+      return this
+    }),
+    add: vi.fn(function(this: any, v: any) {
+      this.x += v.x
+      this.y += v.y
+      this.z += v.z
+      return this
+    }),
   }
+  return mock
 }
 
 beforeEach(() => {
@@ -36,6 +58,7 @@ beforeEach(() => {
     geometries: [],
     materials: [],
     meshes: [],
+    groups: [],
   }
   global.document.body.innerHTML = '<div id="root"></div>'
 })
@@ -48,6 +71,46 @@ vi.mock('three', () => {
     hexValue: number
     constructor(hex: number) {
       this.hexValue = hex
+    }
+    clone() {
+      return new MockColor(this.hexValue)
+    }
+    lerp(target: MockColor, amount: number) {
+      // Simple linear interpolation mock - just return target for testing purposes
+      return target
+    }
+  }
+
+  class Vector3 {
+    x: number
+    y: number
+    z: number
+
+    constructor(x?: number, y?: number, z?: number) {
+      this.x = x || 0
+      this.y = y || 0
+      this.z = z || 0
+    }
+    set(x: number, y: number, z: number) {
+      this.x = x
+      this.y = y
+      this.z = z
+      return this
+    }
+    copy(v: Vector3) {
+      this.x = v.x
+      this.y = v.y
+      this.z = v.z
+      return this
+    }
+    add(v: Vector3) {
+      this.x += v.x
+      this.y += v.y
+      this.z += v.z
+      return this
+    }
+    clone() {
+      return new Vector3(this.x, this.y, this.z)
     }
   }
 
@@ -71,7 +134,16 @@ vi.mock('three', () => {
     setSize: vi.fn(),
     setPixelRatio: vi.fn(),
     render: vi.fn(),
+    shadowMap: { enabled: false, type: null },
     domElement: document.createElement('canvas'),
+  }
+
+  // Shadow map constants
+  const PCFSoftShadowMap = 3001
+
+  const mockFogExp2Prototype = {
+    color: null,
+    density: 0,
   }
 
   return {
@@ -111,17 +183,20 @@ vi.mock('three', () => {
       setSize: vi.Mock
       setPixelRatio: vi.Mock
       render: vi.Mock
+      shadowMap: any
       domElement: HTMLElement
 
       constructor(options?: any) {
         this.setSize = mockRendererPrototype.setSize
         this.setPixelRatio = mockRendererPrototype.setPixelRatio
         this.render = mockRendererPrototype.render
+        this.shadowMap = mockRendererPrototype.shadowMap
         this.domElement = mockRendererPrototype.domElement
         mockCallTracker.renderers.push(this)
       }
     },
     Color: MockColor,
+    Vector3,
     AmbientLight: class AmbientLight {
       color: any
       intensity: number
@@ -138,29 +213,47 @@ vi.mock('three', () => {
       color: any
       intensity: number
       position: any
+      castShadow: boolean
+      shadow: any
 
       constructor(color: string, intensity: number) {
         this.color = color
         this.intensity = intensity
         this.position = createMockWithSet()
+        this.castShadow = false
+        this.shadow = {
+          mapSize: { width: 1024, height: 1024 },
+          camera: { near: 1, far: 100 },
+          bias: 0,
+          autoUpdate: true,
+        }
         mockCallTracker.lights.push(this)
       }
     },
     GridHelper: class GridHelper {
       size: number
       divisions: number
+      position: any
 
       constructor(size: number, divisions: number) {
         this.size = size
         this.divisions = divisions
+        this.position = createMockWithSet()
+        mockCallTracker.geometries.push(this)
       }
     },
     Group: class Group {
       children: any[] = []
+      position: any
+      rotation: any
+      scale: any
       remove: vi.Mock
       add: vi.Mock
 
       constructor() {
+        this.position = createMockWithSet()
+        this.rotation = createMockWithSet()
+        this.scale = createMockWithSet()
         this.remove = vi.fn((child: any) => {
           const index = this.children.indexOf(child)
           if (index > -1) this.children.splice(index, 1)
@@ -168,6 +261,17 @@ vi.mock('three', () => {
         this.add = vi.fn((child: any) => {
           if (!this.children.includes(child)) this.children.push(child)
         })
+        mockCallTracker.groups.push(this)
+      }
+    },
+    FogExp2: class FogExp2 {
+      color: any
+      density: number
+
+      constructor(color: any, density: number) {
+        this.color = color
+        this.density = density
+        mockCallTracker.fog = { color, density }
       }
     },
     SphereGeometry: class SphereGeometry {
@@ -202,20 +306,87 @@ vi.mock('three', () => {
         mockCallTracker.geometries.push(this)
       }
     },
+    CylinderGeometry: class CylinderGeometry {
+      radiusTop: number
+      radiusBottom: number
+      height: number
+      radialSegments: number
+
+      constructor(radiusTop: number, radiusBottom: number, height: number, radialSegments: number) {
+        this.radiusTop = radiusTop
+        this.radiusBottom = radiusBottom
+        this.height = height
+        this.radialSegments = radialSegments
+        mockCallTracker.geometries.push(this)
+      }
+    },
+    TorusGeometry: class TorusGeometry {
+      radius: number
+      tube: number
+      radialSegments: number
+      tubularSegments: number
+      arc: number
+
+      constructor(radius: number, tube: number, radialSegments: number, tubularSegments: number, arc: number) {
+        this.radius = radius
+        this.tube = tube
+        this.radialSegments = radialSegments
+        this.tubularSegments = tubularSegments
+        this.arc = arc
+        mockCallTracker.geometries.push(this)
+      }
+    },
     Mesh: class Mesh {
       geometry: any
       material: any
       position: any
       scale: any
+      rotation: any
+      castShadow: boolean
+      receiveShadow: boolean
+      children: any[] = []
+      add: vi.Mock
 
       constructor(geometry: any, material: any) {
         this.geometry = geometry
         this.material = material
         this.position = createMockWithSet()
         this.scale = createMockWithSet()
+        this.rotation = createMockWithSet()
+        this.castShadow = false
+        this.receiveShadow = false
+        this.add = vi.fn((child: any) => {
+          if (!this.children.includes(child)) this.children.push(child)
+        })
         mockCallTracker.meshes.push(this)
       }
     },
+    PlaneGeometry: class PlaneGeometry {
+      width: number
+      height: number
+
+      constructor(width: number, height: number) {
+        this.width = width
+        this.height = height
+      }
+    },
+    Points: class Points {
+      geometry: any
+      material: any
+
+      constructor(geometry: any, material: any) {
+        this.geometry = geometry
+        this.material = material
+      }
+    },
+    PointsMaterial: class PointsMaterial {
+      options: any
+
+      constructor(options?: any) {
+        this.options = options
+      }
+    },
+    PCFSoftShadowMap,
   }
 })
 
@@ -292,9 +463,9 @@ describe('Game3D Component', () => {
     render(<Game3D gameState={createMockGameState()} />)
 
     await waitFor(() => {
-      // Verify snake geometry was created for each segment (BoxGeometry has width property)
-      const boxGeoms = mockCallTracker.geometries.filter((g: any) => g.width)
-      expect(boxGeoms.length).toBe(2) // 2 segments in mock snake
+      // Verify snake geometry was created for each segment (CylinderGeometry has radiusTop property)
+      const cylinderGeoms = mockCallTracker.geometries.filter((g: any) => g.radiusTop && g.height === 0.7)
+      expect(cylinderGeoms.length).toBe(2) // 2 segments in mock snake
     })
   })
 
@@ -419,6 +590,7 @@ describe('Game3D Component', () => {
         setSize: vi.fn(),
         setPixelRatio: vi.fn(),
         render: vi.fn(),
+        shadowMap: { enabled: false, type: null },
         domElement: document.createElement('canvas'),
       }
 
@@ -427,8 +599,10 @@ describe('Game3D Component', () => {
           background: any
           add: vi.Mock
           position: any
+          fog: any | null
           constructor() {
             this.background = null
+            this.fog = null
             this.add = mockScenePrototype.add
             this.position = mockScenePrototype.position
           }
@@ -460,9 +634,14 @@ describe('Game3D Component', () => {
         Color: MockColor,
         AmbientLight: class AmbientLight { constructor(color: string, intensity: number) {} },
         DirectionalLight: class DirectionalLight { constructor(color: string, intensity: number) {} },
-        GridHelper: class GridHelper { constructor(size: number, divisions: number) {} },
+        GridHelper: class GridHelper {
+          constructor(size: number, divisions: number) { mockCallTracker.geometries.push(this) }
+        },
         Group: class Group {
           children: any[] = []
+          position: any
+          rotation: any
+          scale: any
           remove = vi.fn((child: any) => {
             const index = this.children.indexOf(child)
             if (index > -1) this.children.splice(index, 1)
@@ -470,22 +649,70 @@ describe('Game3D Component', () => {
           add = vi.fn((child: any) => {
             if (!this.children.includes(child)) this.children.push(child)
           })
-          constructor() {}
+          constructor() {
+            this.position = createMockWithSet()
+            this.rotation = createMockWithSet()
+            this.scale = createMockWithSet()
+            mockCallTracker.groups.push(this)
+          }
         },
         SphereGeometry: class SphereGeometry { constructor(radius: number, widthSegments: number, heightSegments: number) {} },
         MeshStandardMaterial: class MeshStandardMaterial { constructor(options?: any) {} },
         BoxGeometry: class BoxGeometry { constructor(width: number, height: number, depth: number) {} },
+        CylinderGeometry: class CylinderGeometry {
+          radiusTop: number
+          radiusBottom: number
+          height: number
+          radialSegments: number
+          constructor(radiusTop: number, radiusBottom: number, height: number, radialSegments: number) {
+            this.radiusTop = radiusTop
+            this.radiusBottom = radiusBottom
+            this.height = height
+            this.radialSegments = radialSegments
+            mockCallTracker.geometries.push(this)
+          }
+        },
+        TorusGeometry: class TorusGeometry {
+          radius: number
+          tube: number
+          radialSegments: number
+          tubularSegments: number
+          arc: number
+          constructor(radius: number, tube: number, radialSegments: number, tubularSegments: number, arc: number) {
+            this.radius = radius
+            this.tube = tube
+            this.radialSegments = radialSegments
+            this.tubularSegments = tubularSegments
+            this.arc = arc
+          }
+        },
+        Points: class Points {
+          geometry: any
+          material: any
+          constructor(geometry: any, material: any) {}
+        },
+        PointsMaterial: class PointsMaterial {
+          options: any
+          constructor(options?: any) { this.options = options }
+        },
         Mesh: class Mesh {
           geometry: any
           material: any
           position: any
           scale: any
+          children: any[] = []
+          add: vi.Mock
           constructor(geometry: any, material: any) {
             this.geometry = geometry
             this.material = material
             this.position = createMockWithSet()
             this.scale = createMockWithSet()
+            this.add = vi.fn((child: any) => { if (!this.children.includes(child)) this.children.push(child) })
+            mockCallTracker.meshes.push(this)
           }
+        },
+        FogExp2: class FogExp2 {
+          constructor(color: any, density: number) {}
         },
       }
     })
@@ -516,13 +743,13 @@ describe('Game3D Component', () => {
     render(<Game3D gameState={createMockGameState()} />)
 
     await waitFor(() => {
-      expect(mockCallTracker.meshes.length).toBeGreaterThan(0)
+      expect(mockCallTracker.groups.length).toBeGreaterThan(0)
     })
 
-    // Verify position.set was called on the food mesh
-    const foodMesh = mockCallTracker.meshes[0]
-    if (foodMesh && foodMesh.position) {
-      expect(foodMesh.position.set).toHaveBeenCalled()
+    // Verify position.set was called on the food group
+    const foodGroup = mockCallTracker.groups.find((g: any) => g.children?.length > 0)
+    if (foodGroup && foodGroup.position) {
+      expect(foodGroup.position.set).toHaveBeenCalled()
     }
   })
 })

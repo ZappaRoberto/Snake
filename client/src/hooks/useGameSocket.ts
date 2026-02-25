@@ -17,6 +17,20 @@ interface WebSocketMessage {
 // Use a fixed game ID for local play (can be changed to UUID per session)
 const LOCAL_GAME_ID = 'local-game-1'
 
+// Difficulty settings
+const BASE_SPEED_MS = 200
+const SPEED_REDUCTION_PER_APPLE = 8 // Challenging: 8ms reduction per apple
+const MIN_SPEED_MS = 60
+
+/**
+ * Calculate the current game speed based on score.
+ * Each apple eaten reduces the delay, making the snake faster.
+ */
+function getDifficultySpeed(score: number): number {
+  const speed = Math.max(MIN_SPEED_MS, BASE_SPEED_MS - score * SPEED_REDUCTION_PER_APPLE)
+  return speed
+}
+
 interface UseGameSocketReturn {
   gameState: SnakeGameModel | null
   isConnected: boolean
@@ -168,13 +182,16 @@ export function useGameSocket(): UseGameSocketReturn {
       window.clearInterval(moveIntervalRef.current)
     }
 
-    // Start auto-move interval (every 200ms for reasonable game speed)
+    // Calculate dynamic speed based on current score
+    const currentSpeed = gameState ? getDifficultySpeed(gameState.score) : BASE_SPEED_MS
+
+    // Start auto-move interval with difficulty-based speed
     moveIntervalRef.current = window.setInterval(() => {
       const currentDirection = directionRef.current
       if (currentDirection) {
         processMove(currentDirection)
       }
-    }, 200)
+    }, currentSpeed)
 
     return () => {
       if (moveIntervalRef.current) {
