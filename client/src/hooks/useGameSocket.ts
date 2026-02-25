@@ -42,6 +42,7 @@ interface UseGameSocketReturn {
   resetGame: () => void
   sendMove: (direction: Direction) => void
   reportGameOver: (score: number, snakeLength: number) => Promise<void>
+  togglePause: () => void
 }
 
 export function useGameSocket(): UseGameSocketReturn {
@@ -66,6 +67,25 @@ export function useGameSocket(): UseGameSocketReturn {
     setDifficultyState({
       value: 'medium',
       settings: DIFFICULTY_SETTINGS['medium'],
+    })
+  }, [])
+
+  // Toggle pause/resume functionality
+  const togglePause = useCallback(() => {
+    setGameState(prev => {
+      if (!prev) return null
+      if (prev.state === 'running') {
+        // Pause the game - clear the auto-move interval
+        if (moveIntervalRef.current) {
+          window.clearInterval(moveIntervalRef.current)
+          moveIntervalRef.current = null
+        }
+        return { ...prev, state: 'paused' }
+      } else if (prev.state === 'paused') {
+        // Resume the game - set state to running which will trigger the useEffect to restart interval
+        return { ...prev, state: 'running' }
+      }
+      return prev
     })
   }, [])
 
@@ -272,5 +292,6 @@ export function useGameSocket(): UseGameSocketReturn {
     resetGame: resetGameLocal,
     sendMove,
     reportGameOver,
+    togglePause,
   }
 }

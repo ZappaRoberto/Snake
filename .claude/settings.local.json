@@ -33,7 +33,16 @@
       "Bash(grep:*)",
       "Bash(echo agent-browser not found:*)",
       "Bash(taskkill:*)",
-      "Bash(head:*)"
+      "Bash(head:*)",
+      "Bash(dir C:\\\\Users\\\\Roberto\\\\VScodeProjects\\\\Snake:*)",
+      "Bash(git:*)",
+      "Bash(echo Exit code: $?:*)",
+      "Bash(cd /c/Users/Roberto/VScodeProjects/Snake/client && pnpm tsc --noEmit 2>&1)",
+      "Bash(echo tsc not found in node_modules:*)",
+      "Bash(echo check script not found:*)",
+      "Bash(pnpm:*)",
+      "Bash(cd:*)",
+      "Bash(cd \"C:/Users/Roberto/VScodeProjects/Snake/client\" && npx agent-browser eval \"const canvas = document.querySelector\\('canvas'\\); console.log\\('Canvas found:', !!canvas\\); console.log\\('Canvas width:', canvas?.width\\); console.log\\('Canvas height:', canvas?.height\\);\" 2>&1)"
     ]
   }
 }
