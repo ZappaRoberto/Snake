@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
-import type { SnakeGameModel, Point } from '../types'
+import type { SnakeGameModel, Point, Difficulty } from '../types'
 
 interface Game3DProps {
   gameState: SnakeGameModel | null
@@ -12,6 +12,138 @@ export function Game3D({ gameState }: Game3DProps) {
   const snakeGroupRef = useRef<THREE.Group | null>(null)
   const foodGroupRef = useRef<THREE.Group | null>(null)
   const particlesRef = useRef<THREE.Points[]>([])
+
+  // Create a pixel art texture pattern for the snake and food
+  const createPixelTexture = (color: string, type: 'snake' | 'food'): THREE.CanvasTexture => {
+    // Create a small canvas for pixel art (8x8 or 16x16)
+    const size = 32
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')
+
+    if (!ctx) {
+      // Fallback to simple color texture
+      const fallbackCanvas = document.createElement('canvas')
+      fallbackCanvas.width = 16
+      fallbackCanvas.height = 16
+      const fallbackCtx = fallbackCanvas.getContext('2d')
+      if (fallbackCtx) {
+        fallbackCtx.fillStyle = color
+        fallbackCtx.fillRect(0, 0, 16, 16)
+        const texture = new THREE.CanvasTexture(fallbackCanvas)
+        texture.magFilter = THREE.NearestFilter
+        texture.minFilter = THREE.NearestFilter
+        return texture
+      }
+    }
+
+    if (ctx) {
+      // Clear canvas with transparency
+      ctx.clearRect(0, 0, size, size)
+
+      if (type === 'snake') {
+        // Snake body - pixel art square pattern
+        const baseColor = color
+        const darker = adjustColor(baseColor, -40)
+        const lighter = adjustColor(baseColor, 40)
+
+        // Base block (main body)
+        ctx.fillStyle = baseColor
+        ctx.fillRect(2, 2, size - 4, size - 4)
+
+        // Pixel art detail: slightly darker corners for depth
+        ctx.fillStyle = darker
+        ctx.fillRect(2, 2, 4, 4) // Top-left corner highlight
+        ctx.fillRect(size - 6, 2, 4, 4) // Top-right corner highlight
+        ctx.fillRect(2, size - 6, 4, 4) // Bottom-left corner highlight
+        ctx.fillRect(size - 6, size - 6, 4, 4) // Bottom-right corner highlight
+
+        // Pixel art detail: lighter center for pop
+        ctx.fillStyle = lighter
+        ctx.fillRect(size / 2 - 4, size / 2 - 4, 8, 8)
+
+        // Grid lines (pixel edges)
+        ctx.strokeStyle = adjustColor(baseColor, -60)
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(0, size / 2)
+        ctx.lineTo(size, size / 2)
+        ctx.moveTo(size / 2, 0)
+        ctx.lineTo(size / 2, size)
+        ctx.stroke()
+
+      } else if (type === 'food') {
+        // Apple food - pixel art
+        const appleColor = '#ff4757'
+        const stemColor = '#48bb78'
+
+        // Apple body (circle-ish pixel art)
+        ctx.fillStyle = appleColor
+        ctx.fillRect(6, 6, 20, 20)
+
+        // Pixel highlights on apple
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(10, 10, 4, 4) // Top-left highlight
+        ctx.fillRect(20, 8, 3, 3) // Top-right highlight
+
+        // Apple shadow/detail
+        ctx.fillStyle = adjustColor(appleColor, -30)
+        ctx.fillRect(12, 20, 6, 4) // Bottom shadow
+
+        // Stem (pixel style)
+        ctx.fillStyle = stemColor
+        ctx.fillRect(14, 2, 4, 4)
+        ctx.fillRect(15, 1, 2, 2)
+
+        // Leaf
+        ctx.fillStyle = '#74c0fc'
+        ctx.fillRect(16, 1, 8, 3)
+        ctx.fillRect(20, 0, 4, 4)
+      }
+
+      const texture = new THREE.CanvasTexture(canvas)
+      // Use NearestFilter for sharp pixel edges
+      texture.magFilter = THREE.NearestFilter
+      texture.minFilter = THREE.NearestFilter
+      return texture
+    }
+
+    // Fallback if canvas creation failed
+    const fallbackCanvas = document.createElement('canvas')
+    fallbackCanvas.width = 16
+    fallbackCanvas.height = 16
+    const fallbackCtx = fallbackCanvas.getContext('2d')
+    if (fallbackCtx) {
+      fallbackCtx.fillStyle = type === 'snake' ? color : '#ff4757'
+      fallbackCtx.fillRect(0, 0, 16, 16)
+    }
+    const texture = new THREE.CanvasTexture(fallbackCanvas)
+    texture.magFilter = THREE.NearestFilter
+    texture.minFilter = THREE.NearestFilter
+    return texture
+  }
+
+  // Helper to darken/lighten a hex color
+  function adjustColor(color: string, amount: number): string {
+    const usePound = color[0] === '#'
+    let hex = color.replace('#', '')
+    if (hex.length === 3) {
+      hex = hex + hex
+    }
+    if (hex.length !== 6) return usePound ? '#' + hex : hex
+
+    const r = parseInt(hex.substring(0, 2), 16)
+    const g = parseInt(hex.substring(2, 4), 16)
+    const b = parseInt(hex.substring(4, 6), 16)
+
+    const newR = Math.max(0, Math.min(255, r + amount))
+    const newG = Math.max(0, Math.min(255, g + amount))
+    const newB = Math.max(0, Math.min(255, b + amount))
+
+    return usePound ? '#' : ''
+      + ((1 << 24) + (Math.floor(newR) << 16) + (Math.floor(newG) << 8) + Math.floor(newB)).toString(16).slice(1)
+  }
 
   // Expose getSnakePosition for testing
   useEffect(() => {
@@ -35,68 +167,17 @@ export function Game3D({ gameState }: Game3DProps) {
     }
   }, [gameState])
 
-  // Create particle system for apple pickup effects
-  const createParticles = (position: THREE.Vector3, color: number): THREE.Points => {
-    const particleCount = 15
-    const geometry = new THREE.BufferGeometry()
-    const positions = new Float32Array(particleCount * 3)
-    const colors = new Float32Array(particleCount * 3)
-    const velocities: THREE.Vector3[] = []
-
-    for (let i = 0; i < particleCount; i++) {
-      positions[i * 3] = position.x
-      positions[i * 3 + 1] = position.y
-      positions[i * 3 + 2] = position.z
-
-      const angle = Math.random() * Math.PI * 2
-      const speed = 0.05 + Math.random() * 0.1
-      velocities.push(
-        new THREE.Vector3(
-          Math.cos(angle) * speed,
-          (Math.random() - 0.5) * speed * 0.5,
-          Math.sin(angle) * speed
-        )
-      )
-
-      const particleColor = new THREE.Color(color)
-      particleColor.multiplyScalar(0.8 + Math.random() * 0.4)
-      colors[i * 3] = particleColor.r
-      colors[i * 3 + 1] = particleColor.g
-      colors[i * 3 + 2] = particleColor.b
-    }
-
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-
-    const material = new THREE.PointsMaterial({
-      size: 0.3,
-      vertexColors: true,
-      transparent: true,
-      opacity: 1,
-      blending: THREE.AdditiveBlending,
-    })
-
-    const points = new THREE.Points(geometry, material)
-    points.userData = { velocities, lifetime: 1.0 }
-    return points
-  }
-
-  // Spawn particle explosion when apple is eaten
-  const spawnAppleParticles = (position: THREE.Vector3) => {
-    if (!sceneRef.current) return
-
-    const particles = createParticles(position, 0xff4757)
-    sceneRef.current.add(particles)
-    particlesRef.current.push(particles)
-  }
+  // Particle system for apple pickup effects - reserved for future use
+  // const createParticles = (position: THREE.Vector3, color: number): THREE.Points => {
+  //   ... particle implementation ...
+  // }
 
   useEffect(() => {
     if (!containerRef.current) return
 
-    // Scene setup
+    // Scene setup - cleaner for pixel art style
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x1a202c)
-    scene.fog = new THREE.FogExp2(0x1a202c, 0.02)
     sceneRef.current = scene
 
     // Camera (isometric view)
@@ -106,64 +187,74 @@ export function Game3D({ gameState }: Game3DProps) {
     camera.position.set(20, 20, 20)
     camera.lookAt(scene.position)
 
-    // Renderer with shadow mapping
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
+    // Renderer with sharp edges (no antialias for pixel art look)
+    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' })
     renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight)
     renderer.setPixelRatio(window.devicePixelRatio)
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     containerRef.current.appendChild(renderer.domElement)
 
-    // Enhanced lighting with multiple sources
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
+    // Simple lighting - flat look for pixel art
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
     scene.add(ambientLight)
 
-    // Main directional light (sun-like)
-    const mainLight = new THREE.DirectionalLight(0xffffff, 1)
+    const mainLight = new THREE.DirectionalLight(0xffffff, 0.8)
     mainLight.position.set(15, 25, 10)
     mainLight.castShadow = true
-    mainLight.shadow.mapSize.width = 2048
-    mainLight.shadow.mapSize.height = 2048
+    mainLight.shadow.mapSize.width = 1024
+    mainLight.shadow.mapSize.height = 1024
     mainLight.shadow.camera.near = 0.5
     mainLight.shadow.camera.far = 100
-    mainLight.shadow.bias = -0.0001
     scene.add(mainLight)
 
-    // Fill light (softer)
-    const fillLight = new THREE.DirectionalLight(0xaec6cf, 0.4)
-    fillLight.position.set(-10, 15, -10)
-    scene.add(fillLight)
-
-    // Rim light (for outline effect)
-    const rimLight = new THREE.DirectionalLight(0x74b9ff, 0.3)
-    rimLight.position.set(0, 10, -20)
-    scene.add(rimLight)
-
-    // Grid with subtle glow
+    // Grid background (visible grid for pixel art style)
     const gridSize = gameState?.grid_size[0] || 20
-    const gridHelper = new THREE.GridHelper(gridSize * 1, gridSize, 0x4a5568, 0x2d3748)
+    const gridHelper = new THREE.GridHelper(gridSize, gridSize, 0x4a5568, 0x2d3748)
     gridHelper.position.y = -0.5
     scene.add(gridHelper)
 
-    // Floor plane for shadows
-    const floorGeometry = new THREE.PlaneGeometry(gridSize + 4, gridSize + 4)
-    const floorMaterial = new THREE.MeshStandardMaterial({
-      color: 0x1a202c,
-      roughness: 0.8,
-      metalness: 0.2,
-    })
-    const floor = new THREE.Mesh(floorGeometry, floorMaterial)
-    floor.rotation.x = -Math.PI / 2
-    floor.position.y = -0.51
-    floor.receiveShadow = true
-    scene.add(floor)
+    // Checkerboard floor pattern (pixel art style)
+    const floorGeometry = new THREE.PlaneGeometry(gridSize + 2, gridSize + 2)
+    const floorCanvas = document.createElement('canvas')
+    floorCanvas.width = 64
+    floorCanvas.height = 64
+    const floorCtx = floorCanvas.getContext('2d')
+    if (floorCtx) {
+      // Checkerboard pattern
+      floorCtx.fillStyle = '#1a202c'
+      floorCtx.fillRect(0, 0, 64, 64)
+      floorCtx.fillStyle = '#2d3748'
+      floorCtx.fillRect(0, 0, 32, 32)
+      floorCtx.fillRect(32, 32, 32, 32)
+
+      const floorTexture = new THREE.CanvasTexture(floorCanvas)
+      floorTexture.wrapS = THREE.RepeatWrapping
+      floorTexture.wrapT = THREE.RepeatWrapping
+      floorTexture.repeat.set((gridSize + 2) / 4, (gridSize + 2) / 4)
+      floorTexture.magFilter = THREE.NearestFilter
+      floorTexture.minFilter = THREE.NearestFilter
+
+      const floorMaterial = new THREE.MeshBasicMaterial({ map: floorTexture })
+      const floor = new THREE.Mesh(floorGeometry, floorMaterial)
+      floor.rotation.x = -Math.PI / 2
+      floor.position.y = -0.51
+      scene.add(floor)
+    } else {
+      // Fallback if canvas fails
+      const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x1a202c })
+      const floor = new THREE.Mesh(floorGeometry, floorMaterial)
+      floor.rotation.x = -Math.PI / 2
+      floor.position.y = -0.51
+      scene.add(floor)
+    }
 
     // Snake segments group
     const snakeGroup = new THREE.Group()
     snakeGroupRef.current = snakeGroup
     scene.add(snakeGroup)
 
-    // Food group (apple with stem and leaf)
+    // Food group (apple sprite)
     const foodGroup = new THREE.Group()
     foodGroupRef.current = foodGroup
     scene.add(foodGroup)
@@ -190,44 +281,34 @@ export function Game3D({ gameState }: Game3DProps) {
       time += 0.016
 
       if (gameState) {
-        // Update snake position
+        // Get difficulty for color scheme
+        const difficulty = gameState.difficulty || 'medium'
+
+        // Update snake position - clear old meshes
         while (snakeGroup.children.length > 0) {
           snakeGroup.remove(snakeGroup.children[0])
         }
 
-        // Create gradient colors for snake body
-        const headColor = new THREE.Color(0x2f855a) // Darker emerald
-        const bodyStartColor = new THREE.Color(0x48bb78)
-        const bodyEndColor = new THREE.Color(0x9ae6b4)
+        // Create textures for snake based on difficulty color scheme
+        const headColor = getDifficultyColor(difficulty, 'head')
+        const bodyColor = getDifficultyColor(difficulty, 'body')
 
         gameState.snake.forEach((segment: Point, index: number) => {
-          // Use CylinderGeometry for high-poly smooth look
-          const radius = 0.35
-          const height = 0.7
-          const segments = 16 // High segment count for smooth cylinders
+          // Use BoxGeometry for sharp pixel edges (no smoothing)
+          const geometry = new THREE.BoxGeometry(0.95, 0.95, 0.95)
 
-          const geometry = new THREE.CylinderGeometry(radius, radius, height, segments)
+          // Create pixel art texture
+          const texture = createPixelTexture(
+            index === 0 ? headColor : bodyColor,
+            'snake'
+          )
+
           const material: THREE.MeshStandardMaterial = new THREE.MeshStandardMaterial({
-            roughness: 0.4,
-            metalness: 0.1,
-            flatShading: false,
+            map: texture,
+            roughness: 0.7,
+            metalness: 0.0,
+            flatShading: false, // Smooth shading for subtle depth
           })
-
-          // Gradient coloring: head is darker, tail is lighter
-          if (index === 0) {
-            material.color = headColor.clone()
-            material.emissive = new THREE.Color(0x2f855a)
-            material.emissiveIntensity = 0.2
-          } else {
-            const t = index / gameState.snake.length
-            const color = bodyStartColor.clone().lerp(bodyEndColor, Math.min(t * 1.5, 1))
-            material.color = color
-            // Add slight emissive to front segments
-            if (t < 0.3) {
-              material.emissive = new THREE.Color(0x2f855a)
-              material.emissiveIntensity = 0.1 * (0.3 - t) * 3
-            }
-          }
 
           const segmentMesh = new THREE.Mesh(geometry, material)
           segmentMesh.castShadow = true
@@ -236,141 +317,110 @@ export function Game3D({ gameState }: Game3DProps) {
           // Convert grid coordinates to 3D coordinates
           segmentMesh.position.set(segment.y - gridSize / 2 + 0.5, 0, -(segment.x - gridSize / 2 + 0.5))
 
-          // Rotate cylinder based on segment position (except head)
-          if (index > 0) {
-            const prevSegment = gameState.snake[index - 1]
-            const dx = prevSegment.x - segment.x
-            const dy = prevSegment.y - segment.y
-
-            if (dx !== 0 || dy !== 0) {
-              // Calculate rotation to align cylinder with movement direction
-              if (dy > 0) segmentMesh.rotation.y = Math.PI / 2
-              else if (dy < 0) segmentMesh.rotation.y = -Math.PI / 2
-              else if (dx > 0) segmentMesh.rotation.z = Math.PI / 2
-              else if (dx < 0) segmentMesh.rotation.z = -Math.PI / 2
-            }
-          }
-
           snakeGroup.add(segmentMesh)
 
-          // Add eyes to head
+          // Add eyes to head (simple pixel style)
           if (index === 0) {
             const eyeColor = new THREE.Color(0xffffff)
             const pupilColor = new THREE.Color(0x1a202c)
-            const eyeRadius = 0.1
-            const eyeOffset = 0.15
+            const eyeSize = 0.15
 
             // Determine eye position based on direction
             let eyePositions: { left: THREE.Vector3; right: THREE.Vector3 } = {
-              left: new THREE.Vector3(eyeOffset, 0.2, -eyeOffset),
-              right: new THREE.Vector3(-eyeOffset, 0.2, -eyeOffset),
+              left: new THREE.Vector3(0.2, 0.2, -0.2),
+              right: new THREE.Vector3(-0.2, 0.2, -0.2),
             }
 
             if (gameState.direction === 'DOWN') {
-              eyePositions = { left: new THREE.Vector3(eyeOffset, 0.2, eyeOffset), right: new THREE.Vector3(-eyeOffset, 0.2, eyeOffset) }
+              eyePositions = { left: new THREE.Vector3(0.2, 0.2, 0.2), right: new THREE.Vector3(-0.2, 0.2, 0.2) }
             } else if (gameState.direction === 'LEFT') {
-              eyePositions = { left: new THREE.Vector3(eyeOffset, 0.2, -eyeOffset), right: new THREE.Vector3(eyeOffset, 0.2, eyeOffset) }
+              eyePositions = { left: new THREE.Vector3(0.2, 0.2, -0.2), right: new THREE.Vector3(0.2, 0.2, 0.2) }
             } else if (gameState.direction === 'RIGHT') {
-              eyePositions = { left: new THREE.Vector3(-eyeOffset, 0.2, eyeOffset), right: new THREE.Vector3(-eyeOffset, 0.2, -eyeOffset) }
+              eyePositions = { left: new THREE.Vector3(-0.2, 0.2, 0.2), right: new THREE.Vector3(-0.2, 0.2, -0.2) }
             }
 
-            // Left eye
-            const leftEyeGeo = new THREE.SphereGeometry(eyeRadius, 8, 8)
-            const leftEyeMat = new THREE.MeshStandardMaterial({ color: eyeColor })
-            const leftEye = new THREE.Mesh(leftEyeGeo, leftEyeMat)
-            leftEye.position.copy(eyePositions.left)
-            segmentMesh.add(leftEye)
+            // Simple pixel-style eyes (cubes instead of spheres for sharpness)
+            const createEye = (position: THREE.Vector3): THREE.Mesh => {
+              const eyeGeo = new THREE.BoxGeometry(eyeSize, eyeSize, eyeSize)
+              const eyeMat = new THREE.MeshBasicMaterial({ color: eyeColor })
+              const eye = new THREE.Mesh(eyeGeo, eyeMat)
+              eye.position.copy(position)
+              return eye
+            }
 
-            // Left pupil
-            const leftPupilGeo = new THREE.SphereGeometry(eyeRadius * 0.5, 8, 8)
-            const leftPupilMat = new THREE.MeshStandardMaterial({ color: pupilColor })
-            const leftPupil = new THREE.Mesh(leftPupilGeo, leftPupilMat)
-            leftPupil.position.copy(eyePositions.left).add(new THREE.Vector3(0, -0.04, 0))
-            segmentMesh.add(leftPupil)
+            segmentMesh.add(createEye(eyePositions.left))
+            segmentMesh.add(createEye(eyePositions.right))
 
-            // Right eye
-            const rightEyeGeo = new THREE.SphereGeometry(eyeRadius, 8, 8)
-            const rightEyeMat = new THREE.MeshStandardMaterial({ color: eyeColor })
-            const rightEye = new THREE.Mesh(rightEyeGeo, rightEyeMat)
-            rightEye.position.copy(eyePositions.right)
-            segmentMesh.add(rightEye)
+            // Pupils (smaller cubes)
+            const createPupil = (position: THREE.Vector3): THREE.Mesh => {
+              const pupilGeo = new THREE.BoxGeometry(eyeSize * 0.5, eyeSize * 0.5, eyeSize * 0.5)
+              const pupilMat = new THREE.MeshBasicMaterial({ color: pupilColor })
+              const pupil = new THREE.Mesh(pupilGeo, pupilMat)
+              pupil.position.copy(position)
+              return pupil
+            }
 
-            // Right pupil
-            const rightPupilGeo = new THREE.SphereGeometry(eyeRadius * 0.5, 8, 8)
-            const rightPupilMat = new THREE.MeshStandardMaterial({ color: pupilColor })
-            const rightPupil = new THREE.Mesh(rightPupilGeo, rightPupilMat)
-            rightPupil.position.copy(eyePositions.right).add(new THREE.Vector3(0, -0.04, 0))
-            segmentMesh.add(rightPupil)
+            segmentMesh.add(createPupil(eyePositions.left.clone().add(new THREE.Vector3(0, -0.05, 0))))
+            segmentMesh.add(createPupil(eyePositions.right.clone().add(new THREE.Vector3(0, -0.05, 0))))
 
-            // Add a small nose/brain detail
-            const brainGeo = new THREE.SphereGeometry(0.12, 8, 8)
-            const brainMat = new THREE.MeshStandardMaterial({ color: 0x2f855a })
-            const brain = new THREE.Mesh(brainGeo, brainMat)
-            brain.position.set(0, 0.35, 0)
-            segmentMesh.add(brain)
+            // Simple pixel nose detail
+            const noseGeo = new THREE.BoxGeometry(0.1, 0.1, 0.1)
+            const noseMat = new THREE.MeshBasicMaterial({ color: headColor })
+            const nose = new THREE.Mesh(noseGeo, noseMat)
+            nose.position.set(0, 0.35, 0)
+            segmentMesh.add(nose)
           }
         })
 
         // Update food position
         if (gameState.food) {
-          const appleColor = new THREE.Color(0xff4757)
-          const stemColor = new THREE.Color(0x2f855a)
-          const leafColor = new THREE.Color(0x48bb78)
-
           // Clear old food group children
           while (foodGroup.children.length > 0) {
             foodGroup.remove(foodGroup.children[0])
           }
 
-          // Apple fruit - high detail sphere
-          const appleGeo = new THREE.SphereGeometry(0.35, 32, 32)
+          // Create apple sprite using pixel art texture
+          const appleCanvas = document.createElement('canvas')
+          appleCanvas.width = 32
+          appleCanvas.height = 32
+          const appleCtx = appleCanvas.getContext('2d')
+
+          if (appleCtx) {
+            // Apple body
+            appleCtx.fillStyle = '#ff4757'
+            appleCtx.fillRect(6, 8, 20, 18)
+
+            // Highlights
+            appleCtx.fillStyle = '#ffffff'
+            appleCtx.fillRect(10, 10, 4, 4)
+            appleCtx.fillRect(22, 9, 3, 3)
+
+            // Stem
+            appleCtx.fillStyle = '#48bb78'
+            appleCtx.fillRect(14, 4, 4, 4)
+
+            // Leaf
+            appleCtx.fillStyle = '#74c0fc'
+            appleCtx.fillRect(16, 2, 8, 3)
+          }
+
+          const appleTexture = new THREE.CanvasTexture(appleCanvas)
+          appleTexture.magFilter = THREE.NearestFilter
+          appleTexture.minFilter = THREE.NearestFilter
+
+          // Apple fruit - pixel art box with texture
+          const appleGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8)
           const appleMat = new THREE.MeshStandardMaterial({
-            color: appleColor,
-            roughness: 0.3,
+            map: appleTexture,
+            roughness: 0.5,
             metalness: 0.1,
           })
           const apple = new THREE.Mesh(appleGeo, appleMat)
           apple.castShadow = true
           foodGroup.add(apple)
 
-          // Gentle rotation animation for apple
-          apple.rotation.y += 0.02
-
-          // Apple shine/sparkle effect
-          const sparkleGeo = new THREE.SphereGeometry(0.05, 8, 8)
-          const sparkleMat = new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            emissive: 0xffffff,
-            emissiveIntensity: 0.5,
-          })
-          const sparkle = new THREE.Mesh(sparkleGeo, sparkleMat)
-          sparkle.position.set(0.1, 0.2, 0.1)
-          apple.add(sparkle)
-
-          // Stem
-          const stemGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8)
-          const stemMat = new THREE.MeshStandardMaterial({ color: stemColor })
-          const stem = new THREE.Mesh(stemGeo, stemMat)
-          stem.position.set(0, 0.45, 0)
-          apple.add(stem)
-
-          // Leaf
-          const leafGeo = new THREE.TorusGeometry(0.12, 0.03, 8, 16, Math.PI * 0.7)
-          const leafMat = new THREE.MeshStandardMaterial({ color: leafColor })
-          const leaf = new THREE.Mesh(leafGeo, leafMat)
-          leaf.position.set(0.05, 0.52, 0.05)
-          leaf.rotation.x = -Math.PI / 4
-          leaf.rotation.z = Math.PI / 8
-          apple.add(leaf)
-
-          // Food position update
-          foodGroup.position.set(gameState.food.y - gridSize / 2 + 0.5, 0, -(gameState.food.x - gridSize / 2 + 0.5))
-
-          // Bobbing animation for food
-          foodGroup.position.y = Math.sin(time * 2) * 0.1
-
-          // Check if apple was eaten (from gameState changes)
-          // We can't detect "just eaten" here, so we rely on external detection
+          // Gentle bobbing animation for food (subtle for pixel art style)
+          foodGroup.position.set(gameState.food.y - gridSize / 2 + 0.5, Math.sin(time * 1.5) * 0.08, -(gameState.food.x - gridSize / 2 + 0.5))
         }
       }
 
@@ -390,14 +440,14 @@ export function Game3D({ gameState }: Game3DProps) {
         }
 
         const positions = particles.geometry.attributes.position.array
-        const velocities = userData.velocities as THREE.Vector3[]
-
-        for (let j = 0; j < velocities.length; j++) {
-          positions[j * 3] += velocities[j].x
-          positions[j * 3 + 1] += velocities[j].y
-          positions[j * 3 + 2] += velocities[j].z
+        for (let j = 0; j < positions.length / 3; j++) {
+          // Simple particle spread
+          positions[j * 3] += (Math.random() - 0.5) * 0.1
+          positions[j * 3 + 1] += (Math.random() - 0.5) * 0.1
+          positions[j * 3 + 2] += (Math.random() - 0.5) * 0.1
         }
         particles.geometry.attributes.position.needsUpdate = true
+        // @ts-expect-error - opacity exists on PointsMaterial but type is Material | Material[]
         particles.material.opacity = userData.lifetime
       }
 
@@ -407,8 +457,6 @@ export function Game3D({ gameState }: Game3DProps) {
 
     render()
 
-    // Handle apple pickup effect - detect when food position changes unexpectedly
-    let lastFoodPosition: string | null = null
     return () => {
       window.removeEventListener('resize', handleResize)
       cancelAnimationFrame(animationFrameId)
@@ -425,7 +473,26 @@ export function Game3D({ gameState }: Game3DProps) {
   return (
     <div
       ref={containerRef}
-      style={{ width: '100%', height: '500px', borderRadius: '8px', overflow: 'hidden' }}
+      style={{
+        width: '100%',
+        height: '100%',
+        aspectRatio: '1/1',
+        borderRadius: '8px',
+        overflow: 'hidden',
+        backgroundColor: '#1a202c',
+      }}
     />
   )
+}
+
+// Helper function to get difficulty-specific colors
+function getDifficultyColor(difficulty: Difficulty, part: 'head' | 'body'): string {
+  switch (difficulty) {
+    case 'easy':
+      return part === 'head' ? '#48bb78' : '#9ae6b4'
+    case 'medium':
+      return part === 'head' ? '#2f855a' : '#38a169'
+    case 'hard':
+      return part === 'head' ? '#e53e3e' : '#fc8181'
+  }
 }

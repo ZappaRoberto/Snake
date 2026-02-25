@@ -1,10 +1,11 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import type { Direction, SnakeGameModel } from '../types'
+import type { Direction, SnakeGameModel, Difficulty } from '../types'
 import {
   createNewGame,
   moveSnake as engineMoveSnake,
 } from '../game/GameEngine'
 import { saveBestScore } from '../services/localStorage'
+import { DIFFICULTY_SETTINGS } from '../types'
 
 interface WebSocketMessage {
   type: string
@@ -17,17 +18,17 @@ interface WebSocketMessage {
 // Use a fixed game ID for local play (can be changed to UUID per session)
 const LOCAL_GAME_ID = 'local-game-1'
 
-// Difficulty settings
-const BASE_SPEED_MS = 200
-const SPEED_REDUCTION_PER_APPLE = 8 // Challenging: 8ms reduction per apple
-const MIN_SPEED_MS = 60
+interface DifficultyState {
+  value: Difficulty
+  settings: typeof DIFFICULTY_SETTINGS[Difficulty]
+}
 
 /**
- * Calculate the current game speed based on score.
- * Each apple eaten reduces the delay, making the snake faster.
+ * Calculate the current game speed based on difficulty settings and score.
+ * Each apple eaten reduces the delay, making the snake faster within the selected preset.
  */
-function getDifficultySpeed(score: number): number {
-  const speed = Math.max(MIN_SPEED_MS, BASE_SPEED_MS - score * SPEED_REDUCTION_PER_APPLE)
+function getDifficultySpeed(settings: { baseSpeed: number; reductionPerApple: number; minSpeed: number }, score: number): number {
+  const speed = Math.max(settings.minSpeed, settings.baseSpeed - score * settings.reductionPerApple)
   return speed
 }
 
@@ -35,7 +36,9 @@ interface UseGameSocketReturn {
   gameState: SnakeGameModel | null
   isConnected: boolean
   hasStarted: boolean
-  startGame: () => void
+  difficulty: DifficultyState | null
+  setDifficulty: (difficulty: Difficulty) => void
+  startGame: (selectedDifficulty: Difficulty) => void
   resetGame: () => void
   sendMove: (direction: Direction) => void
   reportGameOver: (score: number, snakeLength: number) => Promise<void>
@@ -45,6 +48,7 @@ export function useGameSocket(): UseGameSocketReturn {
   const [gameState, setGameState] = useState<SnakeGameModel | null>(null)
   const [isConnected, setIsConnected] = useState(false)
   const [hasStarted, setHasStarted] = useState(false)
+  const [difficulty, setDifficultyState] = useState<DifficultyState | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const moveIntervalRef = useRef<number | null>(null)
   const directionRef = useRef<Direction>('RIGHT')
@@ -53,11 +57,16 @@ export function useGameSocket(): UseGameSocketReturn {
   // Ref to track current game state for sendMove to avoid stale closures
   const gameStateStateRef = useRef<'paused' | 'running' | 'game_over'>('paused')
 
-  // Initialize game state locally when component mounts
+  // Initialize game state locally when component mounts (without starting the game)
   useEffect(() => {
     setGameState(createNewGame(LOCAL_GAME_ID))
     directionRef.current = 'RIGHT'
     lastProcessedDirectionRef.current = 'RIGHT'
+    // Set default difficulty
+    setDifficultyState({
+      value: 'medium',
+      settings: DIFFICULTY_SETTINGS['medium'],
+    })
   }, [])
 
   useEffect(() => {
@@ -109,6 +118,13 @@ export function useGameSocket(): UseGameSocketReturn {
       }
     }
   }, []) // Connect once on mount
+
+  const setDifficulty = useCallback((difficultyValue: Difficulty) => {
+    setDifficultyState({
+      value: difficultyValue,
+      settings: DIFFICULTY_SETTINGS[difficultyValue],
+    })
+  }, [])
 
   // Update refs when gameState changes
   useEffect(() => {
@@ -182,8 +198,10 @@ export function useGameSocket(): UseGameSocketReturn {
       window.clearInterval(moveIntervalRef.current)
     }
 
-    // Calculate dynamic speed based on current score
-    const currentSpeed = gameState ? getDifficultySpeed(gameState.score) : BASE_SPEED_MS
+    // Calculate dynamic speed based on current difficulty settings and score
+    const currentSpeed = difficulty && gameState
+      ? getDifficultySpeed(difficulty.settings, gameState.score)
+      : 200 // Fallback to medium difficulty default
 
     // Start auto-move interval with difficulty-based speed
     moveIntervalRef.current = window.setInterval(() => {
@@ -198,10 +216,29 @@ export function useGameSocket(): UseGameSocketReturn {
         window.clearInterval(moveIntervalRef.current)
       }
     }
-  }, [hasStarted, gameState?.state, processMove])
+  }, [hasStarted, gameState?.state, difficulty, processMove])
 
-  const startGame = useCallback(() => {
+  const startGame = useCallback((selectedDifficulty: Difficulty) => {
+    // Create a new game with the selected difficulty
+    const newGame = createNewGame(LOCAL_GAME_ID, 20, selectedDifficulty)
+    setGameState(newGame)
+    directionRef.current = 'RIGHT'
+    lastProcessedDirectionRef.current = 'RIGHT'
+    setDifficultyState(selectedDifficulty in DIFFICULTY_SETTINGS ? {
+      value: selectedDifficulty,
+      settings: DIFFICULTY_SETTINGS[selectedDifficulty],
+    } : {
+      value: 'medium',
+      settings: DIFFICULTY_SETTINGS['medium'],
+    })
     setHasStarted(true)
+
+    // Clear any stored best score for fresh start
+    saveBestScore(LOCAL_GAME_ID, 0)
+
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'reset_request' }))
+    }
   }, [])
 
   const resetGameLocal = useCallback(() => {
@@ -229,6 +266,8 @@ export function useGameSocket(): UseGameSocketReturn {
     gameState,
     isConnected,
     hasStarted,
+    difficulty,
+    setDifficulty,
     startGame,
     resetGame: resetGameLocal,
     sendMove,

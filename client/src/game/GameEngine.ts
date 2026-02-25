@@ -1,4 +1,4 @@
-import type { Direction, Point, SnakeGameModel } from '../types'
+import type { Direction, Point, SnakeGameModel, Difficulty } from '../types'
 
 const GRID_SIZE_DEFAULT = 20
 
@@ -80,9 +80,17 @@ function spawnFood(snake: Point[], gridSize = GRID_SIZE_DEFAULT): Point {
 }
 
 /**
+ * Calculate current game speed based on difficulty settings and score.
+ */
+function calculateSpeed(difficultySettings: { baseSpeed: number; reductionPerApple: number; minSpeed: number }, score: number): number {
+  const speed = Math.max(difficultySettings.minSpeed, difficultySettings.baseSpeed - score * difficultySettings.reductionPerApple)
+  return speed
+}
+
+/**
  * Create a new game state.
  */
-function createNewGame(gameId: string, gridSize = GRID_SIZE_DEFAULT): SnakeGameModel {
+function createNewGame(gameId: string, gridSize = GRID_SIZE_DEFAULT, difficulty: Difficulty = 'medium'): SnakeGameModel {
   const center = Math.floor(gridSize / 2)
 
   // Initial snake pointing right, length of 3
@@ -103,6 +111,7 @@ function createNewGame(gameId: string, gridSize = GRID_SIZE_DEFAULT): SnakeGameM
     score: 0,
     grid_size: [gridSize, gridSize],
     state: 'running',
+    difficulty,
   }
 }
 
@@ -152,14 +161,15 @@ function moveSnake(game: SnakeGameModel, newDirection: Direction): SnakeGameMode
     score: newScore,
     grid_size: game.grid_size,
     state: 'running',
+    difficulty: game.difficulty,
   }
 }
 
 /**
  * Reset the game to initial state while keeping same ID.
  */
-function resetGame(game: SnakeGameModel, gridSize = GRID_SIZE_DEFAULT): SnakeGameModel {
-  return createNewGame(game.id, gridSize)
+function resetGame(game: SnakeGameModel, gridSize = GRID_SIZE_DEFAULT, difficulty: Difficulty = 'medium'): SnakeGameModel {
+  return createNewGame(game.id, gridSize, difficulty)
 }
 
 /**
@@ -189,6 +199,7 @@ export {
   checkSelfCollision,
   checkWallCollision,
   spawnFood,
+  calculateSpeed,
   createNewGame,
   moveSnake,
   resetGame,
