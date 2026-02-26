@@ -9,7 +9,7 @@ def run_step(step_name, command, allow_fail=False):
     print(f"\n🚀 Esecuzione: {step_name}...")
 
     # Eseguiamo il comando catturando l'output
-    result = subprocess.run(command, capture_output=True, text=True)
+    result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
     if result.returncode != 0 and not allow_fail:
         # Se fallisce, prepariamo il messaggio per Claude Code
@@ -93,7 +93,7 @@ def main():
 
     # Esegue detect-secrets sui file tracciati da git
     git_files = subprocess.run(
-        ["git", "ls-files"], capture_output=True, text=True
+        ["git", "ls-files"], capture_output=True, text=True, encoding="utf-8"
     ).stdout.splitlines()
     run_step(
         "Security Scan (detect-secrets)",
