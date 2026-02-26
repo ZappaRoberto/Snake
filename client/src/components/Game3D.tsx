@@ -226,12 +226,16 @@ export function Game3D({ gameState }: Game3DProps) {
     scene.background = new THREE.Color(0x0f172a)
     sceneRef.current = scene
 
-    // Camera (isometric view)
+    // Camera (isometric view) - scaled based on board dimensions
+    const initialGridSize = gameState?.grid_size[0] || 20
+    const initialBoardSize = initialGridSize + 2  // Include padding
+    const d = Math.max(15, initialBoardSize * 1.3)  // Zoom out to fit full board
     const aspect = containerRef.current.clientWidth / containerRef.current.clientHeight
-    const d = 15
     const camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 1, 1000)
-    camera.position.set(20, 20, 20)
-    camera.lookAt(scene.position)
+    // Position camera further back to see the entire board centered
+    const camDistance = initialBoardSize * 2
+    camera.position.set(camDistance, camDistance, camDistance)
+    camera.lookAt(0, 0, 0)
 
     // Renderer with sharp edges (no antialias for pixel art look)
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' })
@@ -344,18 +348,20 @@ export function Game3D({ gameState }: Game3DProps) {
     foodGroupRef.current = foodGroup
     scene.add(foodGroup)
 
-    // Resize handler
+    // Resize handler - recalculates camera bounds based on current grid size
     const handleResize = () => {
-      if (containerRef.current) {
-        renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight)
-        composer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight)
+      if (!containerRef.current) return
+      renderer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight)
+      composer.setSize(containerRef.current.clientWidth, containerRef.current.clientHeight)
 
-        camera.left = -d * (containerRef.current.clientWidth / containerRef.current.clientHeight)
-        camera.right = d * (containerRef.current.clientWidth / containerRef.current.clientHeight)
-        camera.top = d
-        camera.bottom = -d
-        camera.updateProjectionMatrix()
-      }
+      const currentGridSize = gameState?.grid_size[0] || 20
+      const currentBoardSize = currentGridSize + 2
+      const d = Math.max(15, currentBoardSize * 1.3)  // Zoom out more
+      camera.left = -d * (containerRef.current.clientWidth / containerRef.current.clientHeight)
+      camera.right = d * (containerRef.current.clientWidth / containerRef.current.clientHeight)
+      camera.top = d
+      camera.bottom = -d
+      camera.updateProjectionMatrix()
     }
 
     window.addEventListener('resize', handleResize)
@@ -367,7 +373,26 @@ export function Game3D({ gameState }: Game3DProps) {
     const render = () => {
       time += 0.016
 
-      if (gameState) {
+      if (gameState && containerRef.current) {
+        // Update camera for new grid size when difficulty changes
+        const currentGridSize = gameState.grid_size[0] || 20
+        const currentBoardSize = currentGridSize + 2
+        const d = Math.max(15, currentBoardSize * 1.3)  // Zoom out more
+        const aspect = containerRef.current.clientWidth / containerRef.current.clientHeight
+
+        camera.left = -d * aspect
+        camera.right = d * aspect
+        camera.top = d
+        camera.bottom = -d
+        camera.updateProjectionMatrix()
+
+        // Adjust position based on new board size
+        const camDistance = currentBoardSize * 2
+        camera.position.set(camDistance, camDistance, camDistance)
+        if (sceneRef.current) {
+          camera.lookAt(0, 0, 0)
+        }
+
         // Get difficulty for color scheme
         const difficulty = gameState.difficulty || 'medium'
         const colors = DIFFICULTY_COLORS[difficulty]
