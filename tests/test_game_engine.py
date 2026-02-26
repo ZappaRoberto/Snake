@@ -5,28 +5,33 @@ import pytest
 from src.game.engine import SnakeGameEngine
 from src.game.models import Direction, GameState, Point, SnakeGameModel
 
+# Magic value constants
+INITIAL_SNAKE_LENGTH = 3
+DEFAULT_GRID_SIZE = 20
+SCORE_PER_FOOD = 10
+
 
 class TestSnakeGameEngine:
     """Tests for SnakeGameEngine core functionality."""
 
     @pytest.fixture
     def engine(self) -> SnakeGameEngine:
-        """Create a game engine with default 20x20 grid."""
-        return SnakeGameEngine(grid_size=20)
+        """Create a game engine with default grid size."""
+        return SnakeGameEngine(grid_size=DEFAULT_GRID_SIZE)
 
     def test_create_new_game_initial_state(self, engine: SnakeGameEngine) -> None:
         """Test that a new game starts with correct initial values."""
         game = engine.create_new_game("test-game-1")
 
         assert game.id == "test-game-1"
-        assert len(game.snake) == 3
+        assert len(game.snake) == INITIAL_SNAKE_LENGTH
         assert game.score == 0
         assert game.direction == Direction.RIGHT
         assert game.state == GameState.RUNNING
-        assert game.grid_size == (20, 20)
+        assert game.grid_size == (DEFAULT_GRID_SIZE, DEFAULT_GRID_SIZE)
         # Food should be on grid
-        assert 0 <= game.food.x < 20
-        assert 0 <= game.food.y < 20
+        assert 0 <= game.food.x < DEFAULT_GRID_SIZE
+        assert 0 <= game.food.y < DEFAULT_GRID_SIZE
 
     def test_create_new_game_snake_position(self, engine: SnakeGameEngine) -> None:
         """Test that snake starts centered and pointing right."""
@@ -145,8 +150,8 @@ class TestSnakeGameEngine:
         # Move right into the food
         result = tiny_engine.move_snake(game, Direction.RIGHT)
 
-        assert len(result.snake) == 4  # Grew by 1 (original 3 + 1)
-        assert result.score == 10
+        assert len(result.snake) == INITIAL_SNAKE_LENGTH + 1
+        assert result.score == SCORE_PER_FOOD
 
     def test_food_spawning_not_on_snake(self, engine: SnakeGameEngine) -> None:
         """Test that food never spawns on snake body."""
@@ -166,7 +171,7 @@ class TestSnakeGameEngine:
         new_game = engine.reset_game(game)
 
         assert new_game.id == "persistent-id"
-        assert len(new_game.snake) == 3  # Reset to initial length
+        assert len(new_game.snake) == INITIAL_SNAKE_LENGTH
         assert new_game.score == 0
         assert new_game.state == GameState.RUNNING
 

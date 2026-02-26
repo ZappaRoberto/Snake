@@ -1,5 +1,7 @@
 """REST API routes for 3D Snake Game."""
 
+from contextlib import suppress
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
@@ -102,7 +104,7 @@ async def game_websocket(websocket: WebSocket) -> None:
     """
     await websocket.accept()
 
-    try:
+    with suppress(WebSocketDisconnect):
         while True:
             data = await websocket.receive_json()
             message_type = data.get("type")
@@ -136,6 +138,3 @@ async def game_websocket(websocket: WebSocket) -> None:
             elif message_type == "reset_request":
                 # Client is resetting - acknowledge
                 await websocket.send_json({"type": "reset_acknowledged"})
-
-    except WebSocketDisconnect:
-        pass  # Client disconnected gracefully

@@ -3,6 +3,13 @@
 from src.game.engine import SnakeGameEngine
 from src.game.models import Direction, GameState, Point, SnakeGameModel
 
+# Magic value constants
+INITIAL_SNAKE_LENGTH = 3
+SCORE_PER_FOOD = 10
+DEFAULT_GRID_SIZE = 20
+SERPENTINE_ROWS = 28
+MIN_ALIVE_MOVES = 600
+
 
 class TestGamePlayability:
     """Tests that verify the game is fully playable end-to-end."""
@@ -57,8 +64,8 @@ class TestGamePlayability:
         # Eat the food
         game = engine.move_snake(game, Direction.RIGHT)
         assert game.state == GameState.RUNNING
-        assert len(game.snake) == 4  # Grew
-        assert game.score == 10
+        assert len(game.snake) == INITIAL_SNAKE_LENGTH + 1
+        assert game.score == SCORE_PER_FOOD
 
     def test_snake_can_navigate_full_grid(self) -> None:
         """Test snake can traverse a portion of the grid without dying."""
@@ -76,13 +83,13 @@ class TestGamePlayability:
 
         # Use serpentine pattern: right across, down one, left across, down one...
         moves = []
-        for row in range(28):  # 28 downward movements (grid is 0-29)
+        for row in range(SERPENTINE_ROWS):
             # Move across the width
             if row % 2 == 0:
                 moves.extend([Direction.RIGHT] * 28)  # Even rows: right
             else:
                 moves.extend([Direction.LEFT] * 28)  # Odd rows: left
-            if row < 27:  # Don't go down on last row
+            if row < SERPENTINE_ROWS - 1:
                 moves.append(Direction.DOWN)
 
         alive_moves = 0
@@ -94,7 +101,7 @@ class TestGamePlayability:
                 break
 
         # Should survive most of the pattern (840 moves total, expect >75%)
-        assert alive_moves >= 600, f"Game died after {alive_moves} moves"
+        assert alive_moves >= MIN_ALIVE_MOVES, f"Game died after {alive_moves} moves"
 
     def test_direction_changes_effect_movement(self) -> None:
         """Verify changing direction affects movement correctly."""
@@ -207,8 +214,8 @@ class TestSnakeGrowth:
 
         # Move to first food
         game = engine.move_snake(game, Direction.RIGHT)
-        assert len(game.snake) == 4  # Grew from 3 to 4
-        assert game.score == 10
+        assert len(game.snake) == INITIAL_SNAKE_LENGTH + 1
+        assert game.score == SCORE_PER_FOOD
 
         # Place next food - 1 space ahead of new head position (now at center+1)
         game = SnakeGameModel(
@@ -223,8 +230,8 @@ class TestSnakeGrowth:
 
         # Move to second food (one more move from x=center+1 to x=center+2)
         game = engine.move_snake(game, Direction.RIGHT)
-        assert len(game.snake) == 5  # Grew from 4 to 5
-        assert game.score == 20
+        assert len(game.snake) == INITIAL_SNAKE_LENGTH + 2
+        assert game.score == SCORE_PER_FOOD * 2
 
     def test_snake_growth_does_not_cause_self_collision(self) -> None:
         """Verify growing snake doesn't immediately collide with itself."""
@@ -249,7 +256,7 @@ class TestSnakeGrowth:
 
         # Eat the food - should grow to 5 segments
         game = engine.move_snake(game, Direction.RIGHT)
-        assert len(game.snake) == 5
+        assert len(game.snake) == INITIAL_SNAKE_LENGTH + 2
         assert game.state == GameState.RUNNING
 
 
@@ -305,7 +312,7 @@ class TestEdgeCases:
 
         # Eat food
         game = engine.move_snake(game, Direction.RIGHT)
-        assert game.score == 10
+        assert game.score == SCORE_PER_FOOD
 
         # Create another food - 1 space ahead of new head position (now at center+1)
         game = SnakeGameModel(
@@ -320,18 +327,18 @@ class TestEdgeCases:
 
         # Eat another
         game = engine.move_snake(game, Direction.RIGHT)
-        assert game.score == 20
+        assert game.score == SCORE_PER_FOOD * 2
 
     def test_grid_size_variations(self) -> None:
         """Test game works correctly with different grid sizes."""
         # Test larger grids where snake can easily make 5 moves without dying
-        for grid_size in [10, 15, 20, 30]:
+        for grid_size in (10, 15, 20, 30):
             engine = SnakeGameEngine(grid_size=grid_size)
             game = engine.create_new_game(f"size-{grid_size}-test")
 
             # Verify initial state is correct
             assert game.grid_size == (grid_size, grid_size), f"Grid size mismatch for {grid_size}"
-            assert len(game.snake) == 3, f"Snake length mismatch for {grid_size}"
+            assert len(game.snake) == INITIAL_SNAKE_LENGTH, f"Snake length mismatch for {grid_size}"
             assert game.state == GameState.RUNNING
 
             # Make a few moves without dying - starting at center=5 in size 10
@@ -413,8 +420,8 @@ class TestFoodSpawning:
         for _ in range(10):
             game = engine.create_new_game("food-valid-test")
             # Check food is within bounds
-            assert 0 <= game.food.x < 20, f"Food x={game.food.x} out of bounds"
-            assert 0 <= game.food.y < 20, f"Food y={game.food.y} out of bounds"
+            assert 0 <= game.food.x < DEFAULT_GRID_SIZE, f"Food x={game.food.x} out of bounds"
+            assert 0 <= game.food.y < DEFAULT_GRID_SIZE, f"Food y={game.food.y} out of bounds"
 
     def test_new_food_spawns_after_eating(self) -> None:
         """Verify new food spawns when old food is eaten."""
@@ -445,8 +452,8 @@ class TestFoodSpawning:
         # Food should have changed (spawned new random position)
         assert game.food != old_food, "Food did not respawn after eating"
         # Should still be in valid position
-        assert 0 <= game.food.x < 20
-        assert 0 <= game.food.y < 20
+        assert 0 <= game.food.x < DEFAULT_GRID_SIZE
+        assert 0 <= game.food.y < DEFAULT_GRID_SIZE
 
 
 class TestMoveFrequency:

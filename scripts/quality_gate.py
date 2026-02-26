@@ -1,67 +1,91 @@
-import os
 import subprocess
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 
 def run_step(step_name, command, allow_fail=False):
-    """Esegue un comando e gestisce l'errore per Claude Code."""
-    print(f"\n🚀 Esecuzione: {step_name}...")
+    """Executes a command and handles the exit code for Claude Code auto-healing."""
+    print(f"\n🚀 Running: {step_name}...")
 
-    # Eseguiamo il comando catturando l'output
-    result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    # Execute the command capturing output, enforcing UTF-8 to prevent Windows crashes
+    result = subprocess.run(
+        command, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False
+    )
 
     if result.returncode != 0 and not allow_fail:
-        # Se fallisce, prepariamo il messaggio per Claude Code
+        # If it fails, prepare the exact message for Claude Code
         error_msg = (
-            f"❌ FALLITO: {step_name}\n\n[OUTPUT]\n{result.stdout}\n\n[ERRORI]\n{result.stderr}"
+            f"❌ FAILED: {step_name}\n\n[OUTPUT]\n{result.stdout}\n\n[ERRORS]\n{result.stderr}"
         )
 
-        # Stampiamo sullo standard error (quello che Claude legge)
+        # Print to standard error (which Claude reads)
         print(error_msg, file=sys.stderr)
-        print(
-            f"\n[CLAUDE CODE] Il Quality Gate si è bloccato su '{step_name}'. Analizza gli errori qui sopra e correggi il codice in autonomia, poi riprova.",
-            file=sys.stderr,
+        blocked_at = step_name
+        message = (
+            f"\n[CLAUDE CODE] Quality Gate blocked at '{blocked_at}'. "
+            "Analyze the errors above and fix the code autonomously."
         )
+        print(message, file=sys.stderr)
 
-        # Uscita '2' per dire a Claude Code: "Non ti fermare, auto-correggi!"
+        # Exit '2' tells Claude Code: "Do not stop, heal the code!"
         sys.exit(2)
 
-    print(f"✅ PASSATO: {step_name}")
+    print(f"✅ PASSED: {step_name}")
     return result
 
 
 def check_debug_code():
-    """Controlla la presenza di 'icecream' o 'ic(' nel codice."""
-    print("\n🧹 Esecuzione: Checking for leftover debug code (icecream)...")
+    """Checks for leftover 'icecream' or 'ic(' in the source code."""
+    print("\n🧹 Running: Checking for leftover debug code (icecream)...")
     src_dir = Path("src")
     if not src_dir.exists():
         return
 
     for file_path in src_dir.rglob("*.py"):
-        try:
+        with suppress(Exception):
             content = file_path.read_text(encoding="utf-8")
             if "ic(" in content or "from icecream" in content:
-                error_msg = f"❌ FALLITO: Codice di debug trovato nel file {file_path}!\nRimuovi gli import e le chiamate a 'ic()'."
+                debug_msg = "❌ FAILED: Debug code found in"
+                error_msg = f"{debug_msg} {file_path}! Remove imports and calls to ic()."
                 print(error_msg, file=sys.stderr)
                 sys.exit(2)
-        except Exception:
-            pass
-    print("✅ PASSATO: Nessun debug code trovato.")
+    print("✅ PASSED: No debug code found.")
 
 
 def main():
-    print("🌟 INIZIO QUALITY GATE NATIVO PYTHON 🌟")
+    print("🌟 STARTING NATIVE PYTHON QUALITY GATE 🌟")
 
-    # 1. LINTING & FORMATTING
+    # 1. LINTING, FORMATTING & SPELLING
     run_step("Linting (Ruff Check)", ["uv", "run", "ruff", "check", "."])
     run_step("Formatting (Ruff Format)", ["uv", "run", "ruff", "format", "--check", "."])
+    run_step("Typo Checking (Codespell)", ["uv", "run", "codespell", "src/", "tests/"])
 
-    # 2. MODERN PATTERNS
+    if Path("package.json").exists() or Path("biome.json").exists():
+        run_step("Frontend Linting (Biome)", ["pnpm", "biome", "check", "."])
+    else:
+        print("\nℹ️ package.json or biome.json not found. Skipping Biome.")
+
+    # 2. MODERN PATTERNS & COMPLEXITY
     run_step("Modern Python Patterns (Refurb)", ["uv", "run", "refurb", "."])
+    run_step(
+        "Code Complexity (Xenon)",
+        [
+            "uv",
+            "run",
+            "xenon",
+            "--max-absolute",
+            "B",
+            "--max-modules",
+            "A",
+            "--max-average",
+            "A",
+            "src/",
+        ],
+    )
 
     # 3. ARCHITECTURE
-    if os.path.exists(".import-linter.ini"):
+    if Path(".import-linter.ini").exists():
         run_step("Architectural Layers (Import Linter)", ["uv", "run", "lint-imports"])
     else:
         print("\n⚠️ Skipping Import Linter: .import-linter.ini not found.")
@@ -73,37 +97,47 @@ def main():
     run_step("Dead Code (Deptry)", ["uv", "run", "deptry", "."])
     run_step("Dead Code (Vulture)", ["uv", "run", "vulture", "src/", "--min-confidence", "100"])
 
-    # 6. DOCUMENTATION
-    if os.path.exists("mkdocs.yml"):
-        run_step("Documentation Check", ["uv", "run", "mkdocs", "build", "--strict"])
-    else:
-        print("\nℹ️ mkdocs.yml not found. Skipping docs build.")
+    # 6. SECURITY
+    run_step("Security AST Scan (Bandit)", ["uv", "run", "bandit", "-r", "src/", "-ll"])
 
-    # 7. SECURITY
-    if not os.path.exists(".secrets.baseline"):
-        print("\n⚠️ .secrets.baseline non trovato! Generazione in corso...", file=sys.stderr)
-        # Genera la baseline
-        with open(".secrets.baseline", "w") as f:
-            subprocess.run(["uv", "run", "detect-secrets", "scan"], stdout=f)
-        print(
-            "❌ FALLITO: Generata nuova baseline per i segreti. Controllala, committala e poi riavvia il Quality Gate.",
-            file=sys.stderr,
+    if not Path(".secrets.baseline").exists():
+        print("\n⚠️ .secrets.baseline not found! Generating...", file=sys.stderr)
+        with Path(".secrets.baseline").open("w") as f:
+            subprocess.run(["uv", "run", "detect-secrets", "scan"], stdout=f, check=False)
+        fail_msg = (
+            "❌ FAILED: Generated new secrets baseline. "
+            "Review it, commit it, and then restart the Quality Gate."
         )
-        sys.exit(2)  # Diciamo a Claude di fermarsi e avvisarti
+        print(fail_msg, file=sys.stderr)
+        sys.exit(2)
 
-    # Esegue detect-secrets sui file tracciati da git
-    git_files = subprocess.run(
-        ["git", "ls-files"], capture_output=True, text=True, encoding="utf-8"
-    ).stdout.splitlines()
+    git_result = subprocess.run(
+        ["git", "ls-files"], capture_output=True, text=True, encoding="utf-8", check=False
+    )
+    # Write file list to temp file to avoid command line length limits on Windows
+    with Path(".detect-secrets-files.tmp").open("w") as f:
+        f.write(git_result.stdout)
+
     run_step(
         "Security Scan (detect-secrets)",
-        ["uv", "run", "detect-secrets-hook", "--baseline", ".secrets.baseline"] + git_files,
+        [
+            "uv",
+            "run",
+            "detect-secrets-hook",
+            "--baseline",
+            ".secrets.baseline",
+            f"@{Path('.detect-secrets-files.tmp').absolute()}",
+        ],
     )
 
-    # 8. NO DEBUG LEFT BEHIND
+    # Clean up temp file
+    with suppress(Exception):
+        Path(".detect-secrets-files.tmp").unlink()
+
+    # 7. NO DEBUG LEFT BEHIND
     check_debug_code()
 
-    # 9. TESTING
+    # 8. TESTING
     run_step(
         "Testing (Pytest)",
         [
@@ -118,7 +152,13 @@ def main():
         ],
     )
 
-    print("\n🎉 QUALITY GATE SUPERATO! IL CODICE È PERFETTO E PRONTO. 🎉")
+    # 9. DOCUMENTATION
+    if Path("mkdocs.yml").exists():
+        run_step("Documentation Check", ["uv", "run", "mkdocs", "build", "--strict"])
+    else:
+        print("\nℹ️ mkdocs.yml not found. Skipping docs build.")
+
+    print("\n🎉 QUALITY GATE PASSED! THE CODE IS CLEAN AND READY. 🎉")
     sys.exit(0)
 
 

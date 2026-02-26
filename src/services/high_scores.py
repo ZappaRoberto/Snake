@@ -36,10 +36,11 @@ class HighScoreService:
         if self.storage_file.exists():
             try:
                 raw_data = self.storage_file.read_text()
-                parsed: list[dict] = []
-                for line in raw_data.strip().split("\n"):
-                    if line.strip():
-                        parsed.append(HighScoreItem.model_validate_json(line).model_dump())
+                parsed: list[dict] = [
+                    HighScoreItem.model_validate_json(line).model_dump()
+                    for line in raw_data.strip().split("\n")
+                    if line.strip()
+                ]
                 # Convert list of dicts to dict for easier access
                 if isinstance(parsed, list):
                     self._data = {item["game_id"]: item["best_score"] for item in parsed}
@@ -54,7 +55,7 @@ class HighScoreService:
     def _save_to_file(self) -> None:
         """Save current data to storage file."""
         # Write one item per line for simple append operations
-        with open(self.storage_file, "w") as f:
+        with self.storage_file.open("w") as f:
             for game_id, score in self._data.items():
                 item = HighScoreItem(game_id=game_id, best_score=score)
                 f.write(item.model_dump_json() + "\n")

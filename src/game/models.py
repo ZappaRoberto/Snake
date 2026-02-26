@@ -1,11 +1,11 @@
 """Data models for the 3D Snake Game."""
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel
 
 
-class Direction(str, Enum):
+class Direction(StrEnum):
     """Possible movement directions for the snake."""
 
     UP = "UP"
@@ -39,7 +39,7 @@ class Point(BaseModel):
         return self.x == other.x and self.y == other.y
 
 
-class GameState(str, Enum):
+class GameState(StrEnum):
     """Current state of the game."""
 
     RUNNING = "running"

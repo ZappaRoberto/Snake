@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     min_speed_ms: int = Field(default=60, ge=30, le=150)
 
     # Server configuration
-    host: str = Field(default="0.0.0.0")
+    host: str = Field(default="0.0.0.0")  # nosec B104 - bind to all interfaces for local development
     port: int = Field(default=8000, ge=1, le=65535)
     debug: bool = Field(default=False)
 

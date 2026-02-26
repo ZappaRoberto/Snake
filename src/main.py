@@ -1,7 +1,7 @@
 """3D Snake Game - Main Application Entry Point."""
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.cors import CORSMiddleware
 
 from src.api.routes import router
 
@@ -11,15 +11,21 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# CORS middleware for React development server
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"],
-)
+
+def add_cors_middleware(app: FastAPI) -> None:
+    """Add CORS middleware to the FastAPI app."""
+
+    app.add_middleware(  # noqa: PLC0415, E501
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
+
+
+add_cors_middleware(app)
 
 
 @app.get("/")
